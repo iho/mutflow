@@ -33,6 +33,13 @@ import kotlin.streams.asStream
  */
 class MutFlowExtension : ClassTemplateInvocationContextProvider {
 
+    private companion object {
+        /** When "true", emit a single `[mutflow-json]` line on session close for tooling. */
+        const val JSON_OUTPUT_ENV = "MUTFLOW_JSON_OUTPUT"
+        private fun jsonOutputEnabled(): Boolean =
+            runCatching { System.getenv(JSON_OUTPUT_ENV).equals("true", ignoreCase = true) }.getOrDefault(false)
+    }
+
     override fun supportsClassTemplate(context: ExtensionContext): Boolean {
         return context.testClass
             .map { it.isAnnotationPresent(MutFlowTest::class.java) }
@@ -74,7 +81,7 @@ class MutFlowExtension : ClassTemplateInvocationContextProvider {
             return generateSequence(0 to null as Mutation?) { null }
                 .map { (run, mutation) -> createInvocationContext(sessionId, run, mutation) }
                 .asStream()
-                .onClose { MutFlow.closeSession(sessionId) }
+                .onClose { MutFlow.closeSession(sessionId, emitJson = jsonOutputEnabled()) }
         }
 
         if (effectiveMode == VerificationMode.LENIENT) {
@@ -101,7 +108,7 @@ class MutFlowExtension : ClassTemplateInvocationContextProvider {
         }
             .map { (run, mutation) -> createInvocationContext(sessionId, run, mutation) }
             .asStream()
-            .onClose { MutFlow.closeSession(sessionId) }
+            .onClose { MutFlow.closeSession(sessionId, emitJson = jsonOutputEnabled()) }
     }
 
     private fun createInvocationContext(

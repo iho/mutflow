@@ -572,6 +572,73 @@ class MutFlowSession internal constructor(
         println()
     }
 
+    /**
+     * Renders the mutation testing summary as a single machine-readable JSON line,
+     * prefixed with `[mutflow-json]` so tools can grep it out of mixed console output.
+     */
+    fun renderJsonSummary(): String {
+        val summary = getSummary()
+        val mutants = summary.results.entries.map { (mutation, result) ->
+            val status = when (result) {
+                is MutationResult.Killed -> "KILLED"
+                is MutationResult.Survived -> "SURVIVED"
+                is MutationResult.TimedOut -> "TIMED_OUT"
+            }
+            buildString {
+                append("{\"pointId\":")
+                append(jsonQuote(mutation.pointId))
+                append(",\"variantIndex\":")
+                append(mutation.variantIndex)
+                append(",\"display\":")
+                append(jsonQuote(getDisplayName(mutation)))
+                append(",\"status\":")
+                append(jsonQuote(status))
+                if (result is MutationResult.Killed) {
+                    append(",\"killedBy\":")
+                    append(jsonQuote(result.testName))
+                }
+                append('}')
+            }
+        }
+        return buildString {
+            append("[mutflow-json] {\"totalMutations\":")
+            append(summary.totalMutations)
+            append(",\"testedThisRun\":")
+            append(summary.testedThisRun)
+            append(",\"killed\":")
+            append(summary.killed)
+            append(",\"survived\":")
+            append(summary.survived)
+            append(",\"timedOut\":")
+            append(summary.timedOut)
+            append(",\"untested\":")
+            append(summary.untested)
+            append(",\"mutants\":[")
+            append(mutants.joinToString(","))
+            append("]}")
+        }
+    }
+
+    /** Prints the JSON summary line to stdout. */
+    fun printJsonSummary() {
+        println(renderJsonSummary())
+    }
+
+    private fun jsonQuote(value: String): String = buildString {
+        append('"')
+        value.forEach { c ->
+            when (c) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> if (c.code < 0x20) append("\\u").append(c.code.toString(16).padStart(4, '0')) else append(c)
+            }
+        }
+        append('"')
+    }
+
     // ==================== Testing support ====================
 
     /**

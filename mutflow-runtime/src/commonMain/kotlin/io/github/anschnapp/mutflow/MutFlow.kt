@@ -83,9 +83,12 @@ object MutFlow {
      * Closes a session and cleans up its state.
      * Called by JUnit extension when a @MutFlowTest class finishes.
      */
-    fun closeSession(sessionId: SessionId) {
+    fun closeSession(sessionId: SessionId, emitJson: Boolean = false) {
         val session = sessions.remove(sessionId)
         session?.printSummary()
+        if (emitJson) {
+            session?.printJsonSummary()
+        }
     }
 
     /**
