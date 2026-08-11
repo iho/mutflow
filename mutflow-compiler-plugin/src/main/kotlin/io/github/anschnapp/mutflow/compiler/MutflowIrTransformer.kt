@@ -478,6 +478,22 @@ class MutflowIrTransformer(
     /**
      * Injects a MutationRegistry.checkTimeout() call at the top of a loop body.
      * This prevents mutations that cause infinite loops from hanging the test run.
+     *
+     * For a `for (i in a..b) { ... }` loop, the frontend desugars it into a while-loop
+     * tagged with origin FOR_LOOP_INNER_WHILE, whose body is a block starting with the
+     * loop-variable statement `val i = it.next()` (origin FOR_LOOP_NEXT) as a DIRECT,
+     * top-level statement. The JVM backend's RangeLoopTransformer (an optimization that
+     * turns this into a counting loop) locates that statement by scanning the body
+     * block's direct statements (see gatherLoopVariableInfo in ForLoopsLowering.kt) and
+     * crashes with "No 'next' statement in for-loop" if it isn't found there.
+     *
+     * We used to always wrap the whole body in a NEW block (`{ checkTimeoutCall; body }`),
+     * which nests the original body — and therefore `val i = it.next()` — one level
+     * deeper, breaking that scan and crashing the compiler on every for-range loop
+     * inside a mutation target. Instead, when the body is already a block/container
+     * (the common case for both `for` and `while`/`do-while` loops), insert the check
+     * call as the first statement of the EXISTING container in place, preserving the
+     * flat statement list RangeLoopTransformer expects.
      */
     private fun injectTimeoutCheck(loop: IrLoop) {
         val body = loop.body ?: return
@@ -490,14 +506,19 @@ class MutflowIrTransformer(
             call.arguments[0] = builder.irGetObject(registryClass)
         }
 
-        loop.body = IrBlockImpl(
-            startOffset = body.startOffset,
-            endOffset = body.endOffset,
-            type = pluginContext.irBuiltIns.unitType,
-            origin = null
-        ).apply {
-            statements.add(checkCall)
-            statements.add(body)
+        val existingContainer = body as? IrContainerExpression
+        if (existingContainer != null) {
+            existingContainer.statements.add(0, checkCall)
+        } else {
+            loop.body = IrBlockImpl(
+                startOffset = body.startOffset,
+                endOffset = body.endOffset,
+                type = pluginContext.irBuiltIns.unitType,
+                origin = null
+            ).apply {
+                statements.add(checkCall)
+                statements.add(body)
+            }
         }
     }
 
